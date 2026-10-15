@@ -24,3 +24,8 @@ dependencies = [
     "kagglehub>=1.0.2",
     "rasterio>=1.5.2",
 ]
+
+# Makes src/hyperearth an installable package, so `import hyperearth` works from anywhere
+[build-system]
+requires = ["uv_build>=0.11.25,<0.12"]
+build-backend = "uv_build"

@@ -29,3 +29,13 @@ dependencies = [
 [build-system]
 requires = ["uv_build>=0.11.25,<0.12"]
 build-backend = "uv_build"
+
+# PyTorch with CUDA 13.0 (GPU) on Windows/Linux; macOS keeps the default PyPI build
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

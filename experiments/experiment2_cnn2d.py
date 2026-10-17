@@ -3,7 +3,7 @@ import torch
 from hyperearth.data.dataloader.hyperdataset import HyperDataset
 from hyperearth.models.cnn.cnn_2d import CNN2D
 from hyperearth.training.trainer import train_model, predict
-from hyperearth.training.metrics import compute_metrics
+from hyperearth.training.metrics import compute_metrics, print_metrics
 
 
 # Experiment settings
@@ -29,15 +29,7 @@ def main():
 
     y_true, y_pred = predict(model, test_loader)
     metrics = compute_metrics(y_true, y_pred)
-
-    print("\nTest results:")
-    print(f"  OA:    {metrics['OA']:.2%}")
-    print(f"  AA:    {metrics['AA']:.2%}")
-    print(f"  Kappa: {metrics['Kappa']:.4f}")
-    print("  Per-class accuracy:")
-    for cls, acc in enumerate(metrics["per_class"], start=1):
-        print(f"    class {cls:2d}: {acc:.2%}")
-
+    print_metrics(metrics)
 
 if __name__ == "__main__":
     main()

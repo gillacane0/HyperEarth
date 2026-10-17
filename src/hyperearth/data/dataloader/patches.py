@@ -9,11 +9,12 @@ def split_labeled_pixels(labels, train_ratio=0.2, val_ratio=0.1, seed=42):
 
     Returns three arrays of (row, col) coordinates.
     """
-    coords = np.argwhere(labels > 0)
-    classes = labels[coords[:, 0], coords[:, 1]]
+    coords = np.argwhere(labels > 0) #get only labels > 0 array of coordinates (x,y)
+    classes = labels[coords[:, 0], coords[:, 1]] #from original labesls get the classes of the coordinates (x,y) that are labeled ( > 0 )
 
     train_coords, rest_coords, _, rest_classes = train_test_split(
         coords, classes, train_size=train_ratio, stratify=classes, random_state=seed)
+    
     val_coords, test_coords = train_test_split(
         rest_coords, train_size=val_ratio / (1 - train_ratio), stratify=rest_classes, random_state=seed)
 
@@ -21,19 +22,24 @@ def split_labeled_pixels(labels, train_ratio=0.2, val_ratio=0.1, seed=42):
 
 
 class PatchDataset(Dataset):
-    """Square patches centered on the given pixels, labeled with the class of the center pixel.
+    """
+    Create a dataset where each sample is a square patch of size (patch_size, patch_size) 
+    centered on a pixel that determines the class label.
 
-    Each item is a (bands, patch_size, patch_size) tensor and a class index in 0..num_classes-1
-    (the original labels start at 1, because 0 means unlabeled).
+    Each item is a (bands, patch_size, patch_size) tensor and a 
+    class index in 0..num_classes-1 (the original labels start at 1, because 0 means unlabeled).
     """
 
     def __init__(self, cube, labels, coords, patch_size=11):
         if patch_size % 2 == 0:
             raise ValueError("patch_size must be odd, so that the patch has a center pixel")
         self.patch_size = patch_size
-        margin = patch_size // 2
 
-        # Pad the borders so that the patches around edge pixels are complete
+        margin = patch_size // 2 #compute the margin between the center pixel and edge of the patch
+
+        # Pad the borders so that the patches around edge pixels are complete 
+        # Element in first row ( for example ) cant have a pathc otherwise ( the dont have
+        # enough pixels around them ) so we pad the image with a reflection of the image
         padded = np.pad(cube, ((margin, margin), (margin, margin), (0, 0)), mode="reflect")
         self.cube = torch.from_numpy(padded).permute(2, 0, 1).contiguous().float()  # (bands, rows, cols)
 

@@ -3,7 +3,9 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from hyperearth.data.patches import PatchDataset, split_labeled_pixels
+from hyperearth.data.dataloader import hyperdataset
+from hyperearth.data.dataloader.hyperdataset import HyperDataset
+from hyperearth.data.dataloader.patches import PatchDataset, split_labeled_pixels
 from hyperearth.models.cnn.cnn_2d import CNN2D
 from hyperearth.training.metrics import compute_metrics
 from hyperearth.training.trainer import predict, train_model
@@ -82,6 +84,32 @@ def test_patch_size_must_be_odd(synthetic_scene):
     cube, labels = synthetic_scene
     with pytest.raises(ValueError):
         PatchDataset(cube, labels, np.array([[5, 5]]), patch_size=4)
+
+
+# --- HyperDataset ---
+
+def test_hyperdataset_unknown_name():
+    with pytest.raises(ValueError, match="Unknown dataset"):
+        HyperDataset("not_a_dataset")
+
+
+def test_hyperdataset_builds_three_loaders(synthetic_scene, monkeypatch):
+    cube, labels = synthetic_scene
+    # Register a fake dataset only for this test, so Indian Pines is not downloaded
+    fake = (lambda: (cube, labels), lambda data, n_components: (data, None))
+    monkeypatch.setitem(hyperdataset.DATASETS, "fake", fake)
+
+    dataset = HyperDataset("fake", patch_size=5, batch_size=16, seed=0)
+    assert dataset.num_bands == BANDS
+    assert dataset.num_classes == NUM_CLASSES
+
+    loaders = dataset.get_loaders()
+    assert len(loaders) == 3
+    assert sum(len(loader.dataset) for loader in loaders) == int((labels > 0).sum())
+
+    x, y = next(iter(loaders[0]))
+    assert x.shape == (16, BANDS, 5, 5)
+    assert 0 <= y.min() and y.max() < NUM_CLASSES
 
 
 # --- Model ---

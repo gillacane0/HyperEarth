@@ -1,7 +1,7 @@
 import numpy as np
 import kagglehub
 
-from .utils import read_tif, find_file
+from ..utils import read_tif, find_file
 
 
 KAGGLE_DATASET = "ankitgaidhar/indian-pines-hyperspectral-dataset"

@@ -1,7 +1,10 @@
 import copy
+import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score
+
+from hyperearth.training.metrics import compute_metrics
 
 
 def get_device():
@@ -9,7 +12,8 @@ def get_device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def train_model(model, train_loader, val_loader, epochs=50, lr=1e-3, device=None):
+
+def train_model(model, train_loader, val_loader, epochs=50, lr=1e-3, device=None) -> tuple[nn.Module, list[dict]]:
     """Train a classification model and keep the weights of the epoch with the best validation accuracy."""
     device = device or get_device()
     model.to(device)
@@ -48,9 +52,8 @@ def train_model(model, train_loader, val_loader, epochs=50, lr=1e-3, device=None
     model.load_state_dict(best_state)
     return model, history
 
-
 @torch.no_grad()
-def predict(model, loader):
+def predict(model, loader) -> tuple[np.ndarray, np.ndarray]:
     """Return the true and the predicted classes of every sample in the loader."""
     device = next(model.parameters()).device
     model.eval()
@@ -59,3 +62,16 @@ def predict(model, loader):
         y_pred.append(model(x.to(device)).argmax(dim=1).cpu())
         y_true.append(y)
     return torch.cat(y_true).numpy(), torch.cat(y_pred).numpy()
+
+
+def run_experiment(model, dataset, epochs=50, lr=1e-3) -> tuple[nn.Module, list[dict], dict]:
+    """Run a complete experiment: train on the dataset, then evaluate on its test set.
+
+    Returns (model, history, metrics).
+    """
+
+    train_loader, val_loader, test_loader = dataset.get_loaders()
+    model, history = train_model(model, train_loader, val_loader, epochs=epochs, lr=lr)
+    y_true, y_pred = predict(model, test_loader)
+    metrics = compute_metrics(y_true, y_pred)
+    return model, history, metrics

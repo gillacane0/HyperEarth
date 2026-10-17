@@ -25,6 +25,7 @@ def main():
     train_loader, val_loader, test_loader = dataset.get_loaders()
 
     model = CNN2D(in_channels=dataset.num_bands, num_classes=dataset.num_classes)
+    
     model, _ = train_model(model, train_loader, val_loader, epochs=EPOCHS, lr=LR)
 
     y_true, y_pred = predict(model, test_loader)

@@ -8,7 +8,7 @@ from hyperearth.data.dataloader.hyperdataset import HyperDataset
 from hyperearth.data.dataloader.patches import PatchDataset, split_labeled_pixels
 from hyperearth.models.cnn.cnn_2d import CNN2D
 from hyperearth.training.metrics import compute_metrics
-from hyperearth.training.trainer import predict, train_model
+from hyperearth.training.trainer import predict, run_experiment, train_model
 
 
 NUM_CLASSES = 3
@@ -158,3 +158,17 @@ def test_training_pipeline_learns_synthetic_data(synthetic_scene):
     y_true, y_pred = predict(model, test_loader)
     assert len(y_true) == len(y_pred) == len(test)
     assert compute_metrics(y_true, y_pred)["OA"] > 0.9
+
+
+def test_run_experiment_returns_tuple_and_uses_epochs(synthetic_scene, monkeypatch):
+    torch.manual_seed(0)
+    cube, labels = synthetic_scene
+    fake = (lambda: (cube, labels), lambda data, n_components: (data, None))
+    monkeypatch.setitem(hyperdataset.DATASETS, "fake", fake)
+    dataset = HyperDataset("fake", patch_size=5, batch_size=32, seed=0)
+
+    model, history, metrics = run_experiment(CNN2D(BANDS, NUM_CLASSES), dataset, epochs=3)
+
+    assert isinstance(model, CNN2D)
+    assert len(history) == 3  # the epochs argument is really used
+    assert set(metrics) == {"OA", "AA", "Kappa", "per_class"}

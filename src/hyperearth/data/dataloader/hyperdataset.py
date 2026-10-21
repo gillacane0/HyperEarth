@@ -15,6 +15,7 @@ class HyperDataset:
 
     It loads the raw data, preprocesses it, splits the labeled pixels and cuts the patches.
     After creation, `num_bands` and `num_classes` tell the model what input and output size to use.
+    With n_components=None the PCA is skipped and all the original bands are kept (e.g. for 1D CNNs).
     """
 
     def __init__(self, name, n_components=30, patch_size=11, train_ratio=0.2, val_ratio=0.1,

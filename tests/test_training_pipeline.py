@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from hyperearth.data.dataloader import hyperdataset
 from hyperearth.data.dataloader.hyperdataset import HyperDataset
 from hyperearth.data.dataloader.patches import PatchDataset, split_labeled_pixels
+from hyperearth.data.preprocessing.indian_pines import preprocess_data
+from hyperearth.models.cnn.cnn_1d import CNN1D
 from hyperearth.models.cnn.cnn_2d import CNN2D
 from hyperearth.training.metrics import compute_metrics
 from hyperearth.training.trainer import predict, run_experiment, train_model
@@ -33,8 +35,41 @@ def synthetic_scene():
     return cube.astype(np.float32), labels
 
 
+@pytest.fixture
+def fake_dataset(synthetic_scene, monkeypatch):
+    """Register the synthetic scene as a dataset called "fake", only for the current test.
+
+    This way HyperDataset can be tested without downloading Indian Pines.
+    """
+    cube, labels = synthetic_scene
+    fake = (lambda: (cube, labels), lambda data, n_components: (data, None))
+    monkeypatch.setitem(hyperdataset.DATASETS, "fake", fake)
+    return "fake"
+
+
 def _as_set(coords):
     return {tuple(rc) for rc in coords}
+
+
+# --- Preprocessing ---
+
+def test_preprocess_with_pca_reduces_bands(synthetic_scene):
+    cube, _ = synthetic_scene
+    data, pca = preprocess_data(cube, n_components=3)
+    assert data.shape == (30, 30, 3)
+    assert pca.n_components_ == 3
+
+
+def test_preprocess_without_pca_keeps_all_bands(synthetic_scene):
+    cube, _ = synthetic_scene
+    data, pca = preprocess_data(cube, n_components=None)
+
+    assert pca is None
+    assert data.shape == cube.shape
+    # Every band is only normalized: mean 0 and standard deviation 1
+    pixels = data.reshape(-1, BANDS)
+    np.testing.assert_allclose(pixels.mean(axis=0), 0, atol=1e-4)
+    np.testing.assert_allclose(pixels.std(axis=0), 1, atol=1e-4)
 
 
 # --- Data split ---
@@ -86,6 +121,15 @@ def test_patch_size_must_be_odd(synthetic_scene):
         PatchDataset(cube, labels, np.array([[5, 5]]), patch_size=4)
 
 
+def test_patch_size_one_gives_the_pixel_spectrum(synthetic_scene):
+    cube, labels = synthetic_scene
+    dataset = PatchDataset(cube, labels, np.array([[3, 0], [15, 15]]), patch_size=1)
+
+    patch, _ = dataset[1]
+    assert patch.shape == (BANDS, 1, 1)
+    torch.testing.assert_close(patch[:, 0, 0], torch.from_numpy(cube[15, 15]))
+
+
 # --- HyperDataset ---
 
 def test_hyperdataset_unknown_name():
@@ -93,13 +137,9 @@ def test_hyperdataset_unknown_name():
         HyperDataset("not_a_dataset")
 
 
-def test_hyperdataset_builds_three_loaders(synthetic_scene, monkeypatch):
-    cube, labels = synthetic_scene
-    # Register a fake dataset only for this test, so Indian Pines is not downloaded
-    fake = (lambda: (cube, labels), lambda data, n_components: (data, None))
-    monkeypatch.setitem(hyperdataset.DATASETS, "fake", fake)
-
-    dataset = HyperDataset("fake", patch_size=5, batch_size=16, seed=0)
+def test_hyperdataset_builds_three_loaders(fake_dataset, synthetic_scene):
+    _, labels = synthetic_scene
+    dataset = HyperDataset(fake_dataset, patch_size=5, batch_size=16, seed=0)
     assert dataset.num_bands == BANDS
     assert dataset.num_classes == NUM_CLASSES
 
@@ -112,13 +152,27 @@ def test_hyperdataset_builds_three_loaders(synthetic_scene, monkeypatch):
     assert 0 <= y.min() and y.max() < NUM_CLASSES
 
 
-# --- Model ---
+# --- Models ---
 
 @pytest.mark.parametrize("patch_size", [3, 7, 11])
 def test_cnn2d_output_shape(patch_size):
     model = CNN2D(in_channels=BANDS, num_classes=NUM_CLASSES)
     out = model(torch.randn(4, BANDS, patch_size, patch_size))
     assert out.shape == (4, NUM_CLASSES)
+
+
+@pytest.mark.parametrize("num_bands", [8, 103, 220])
+def test_cnn1d_output_shape(num_bands):
+    model = CNN1D(num_bands=num_bands, num_classes=NUM_CLASSES)
+    out = model(torch.randn(4, num_bands, 1, 1))
+    assert out.shape == (4, NUM_CLASSES)
+
+
+def test_cnn1d_uses_only_the_center_pixel():
+    model = CNN1D(num_bands=BANDS, num_classes=NUM_CLASSES).eval()
+    patches = torch.randn(4, BANDS, 5, 5)
+    center = patches[:, :, 2:3, 2:3]  # the same center pixels, as 1x1 patches
+    torch.testing.assert_close(model(patches), model(center))
 
 
 # --- Metrics ---
@@ -160,15 +214,22 @@ def test_training_pipeline_learns_synthetic_data(synthetic_scene):
     assert compute_metrics(y_true, y_pred)["OA"] > 0.9
 
 
-def test_run_experiment_returns_tuple_and_uses_epochs(synthetic_scene, monkeypatch):
+def test_run_experiment_returns_tuple_and_uses_epochs(fake_dataset):
     torch.manual_seed(0)
-    cube, labels = synthetic_scene
-    fake = (lambda: (cube, labels), lambda data, n_components: (data, None))
-    monkeypatch.setitem(hyperdataset.DATASETS, "fake", fake)
-    dataset = HyperDataset("fake", patch_size=5, batch_size=32, seed=0)
+    dataset = HyperDataset(fake_dataset, patch_size=5, batch_size=32, seed=0)
 
     model, history, metrics = run_experiment(CNN2D(BANDS, NUM_CLASSES), dataset, epochs=3)
 
     assert isinstance(model, CNN2D)
     assert len(history) == 3  # the epochs argument is really used
     assert set(metrics) == {"OA", "AA", "Kappa", "per_class"}
+
+
+def test_cnn1d_pipeline_learns_synthetic_data(fake_dataset):
+    torch.manual_seed(0)
+    dataset = HyperDataset(fake_dataset, n_components=None, patch_size=1, batch_size=32, seed=0)
+
+    model = CNN1D(num_bands=dataset.num_bands, num_classes=dataset.num_classes)
+    _, _, metrics = run_experiment(model, dataset, epochs=10)
+
+    assert metrics["OA"] > 0.9
